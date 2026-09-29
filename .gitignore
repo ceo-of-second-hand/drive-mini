@@ -1,0 +1,23 @@
+# local working docs - never published
+specs/
+plans/
+docs/
+CLAUDE.md
+.claude/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# app data / secrets
+.env
+*.db
+storage/
+
+# misc
+~$*
+*.lnk
+.vscode/
+.idea/

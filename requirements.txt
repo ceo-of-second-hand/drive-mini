@@ -1,0 +1,15 @@
+# backend
+fastapi
+uvicorn[standard]
+sqlalchemy>=2
+python-multipart
+pyjwt
+bcrypt
+python-dotenv
+
+# desktop client
+pyside6
+httpx
+
+# tests
+pytest
