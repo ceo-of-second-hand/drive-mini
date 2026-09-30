@@ -43,7 +43,10 @@ class UserOut(BaseModel):
 
 
 class FileOut(BaseModel):
-    """One file in the user's virtual disk, with the attributes shown in the file table."""
+    """One file in the user's virtual disk, with the attributes shown in the file table.
+
+    Reply-only: clients never send these fields. Times are the server's, in UTC ("...Z").
+    """
     model_config = ConfigDict(from_attributes=True)
 
     id: int

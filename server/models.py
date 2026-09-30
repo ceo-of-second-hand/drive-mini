@@ -8,6 +8,12 @@ from server.db import Base
 
 
 def utcnow() -> datetime:
+    """The single clock for all file and token times: the server's, in UTC.
+
+    Clients never send times, so every device sees the same values, and the time zone of
+    any PC doesn't matter. created_at = upload to the drive (not the file's date on the PC);
+    modified_at = last upload/replace. Clients convert to local time only for display.
+    """
     return datetime.now(timezone.utc)
 
 
@@ -36,6 +42,8 @@ class FileMetadata(Base):
     extension: Mapped[str] = mapped_column(String(32))
     size: Mapped[int]
     mime_type: Mapped[str] = mapped_column(String(100))
+    # default=utcnow (the function, no parentheses) runs on INSERT for each new row;
+    # updates never use it, so replace sets modified_at explicitly.
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     modified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     uploader_name: Mapped[str] = mapped_column(String(64))
