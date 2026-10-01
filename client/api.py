@@ -4,12 +4,30 @@ Every reply is parsed with the shared schemas (common/schemas.py), so a mismatch
 server fails loudly here. Errors of any kind become ApiError with a readable message.
 The login token is kept in memory only.
 """
+from pathlib import Path
+
 import httpx
 from pydantic import ValidationError
 
+from common import rules
 from common.schemas import ErrorOut, FileOut, UserOut
 
 DEFAULT_SERVER = "http://127.0.0.1:8000"
+
+
+def upload_problem(path: Path) -> str | None:
+    """Check a local file against the shared rules before sending it. None = OK.
+
+    The server enforces the same rules; checking here gives an instant, clear message.
+    """
+    if not path.is_file():
+        return f"'{path.name}' is not a file (folders can't be uploaded)."
+    error = rules.validate_file_name(path.name)
+    if error:
+        return error
+    if path.stat().st_size > rules.MAX_UPLOAD_BYTES:
+        return f"'{path.name}' is larger than {rules.MAX_UPLOAD_BYTES // (1024 * 1024)} MB."
+    return None
 
 
 class ApiError(Exception):
@@ -71,3 +89,19 @@ class RestApiClient:
 
     def list_files(self) -> list[FileOut]:
         return [FileOut.model_validate(item) for item in self._request("GET", "/files").json()]
+
+    def upload(self, path: Path) -> FileOut:
+        """New file. A taken name raises ApiError with status 409 (then offer replace)."""
+        r = self._request("POST", "/files", files={"file": (path.name, path.read_bytes())})
+        return FileOut.model_validate(r.json())
+
+    def replace(self, file_id: int, path: Path) -> FileOut:
+        """New content for an existing file; its name, created time and uploader stay."""
+        r = self._request("PUT", f"/files/{file_id}", files={"file": (path.name, path.read_bytes())})
+        return FileOut.model_validate(r.json())
+
+    def download(self, file_id: int) -> bytes:
+        return self._request("GET", f"/files/{file_id}/content").content
+
+    def delete(self, file_id: int) -> None:
+        self._request("DELETE", f"/files/{file_id}")
