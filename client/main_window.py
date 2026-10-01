@@ -1,11 +1,15 @@
 """Main window (FileListView): the user's virtual disk as a table, plus file actions."""
 from pathlib import Path
 
-from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QHeaderView, QLabel, QMainWindow,
-                               QMessageBox, QSizePolicy, QTableView, QToolBar, QWidget)
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QHeaderView, QLabel,
+                               QMainWindow, QMenu, QMessageBox, QSizePolicy, QSplitter, QTableView,
+                               QToolBar, QWidget)
 
 from client.api import ApiError, RestApiClient, upload_problem
-from client.file_model import FileTableModel
+from client.file_model import COLUMNS, CREATED_COLUMN, NAME_COLUMN, FileTableModel
+from client.preview import PREVIEW_MAX_BYTES, PreviewPanel, preview_kind
+from client.sorting import FileFilter, SortOrder
 from client.ui import busy_cursor
 from common.rules import name_key
 from common.schemas import FileOut, UserOut
@@ -30,8 +34,19 @@ class MainWindow(QMainWindow):
         self.table.verticalHeader().hide()
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # Name takes the rest
-        self.setCentralWidget(self.table)
+        header.setSectionResizeMode(NAME_COLUMN, QHeaderView.ResizeMode.Stretch)  # Name takes the rest
+        header.setSectionsClickable(True)
+        header.sectionClicked.connect(self._header_clicked)  # Created header → reverse the order
+        header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(  # right-click header → show/hide columns
+            lambda pos: self.columns_menu().exec(header.mapToGlobal(pos)))
+
+        self.preview = PreviewPanel()
+        splitter = QSplitter()
+        splitter.addWidget(self.table)
+        splitter.addWidget(self.preview)
+        splitter.setSizes([620, 280])
+        self.setCentralWidget(splitter)
 
         toolbar = QToolBar("Main")
         toolbar.setMovable(False)
@@ -41,13 +56,21 @@ class MainWindow(QMainWindow):
         self.delete_action = toolbar.addAction("Delete", self.delete_selected)
         toolbar.addSeparator()
         toolbar.addAction("Refresh", self.refresh)
+        toolbar.addSeparator()
+        self.filter_box = QComboBox()
+        for file_filter in FileFilter:
+            self.filter_box.addItem(file_filter.value, file_filter)
+        self.filter_box.currentIndexChanged.connect(
+            lambda: self.set_filter(self.filter_box.currentData()))
+        toolbar.addWidget(QLabel(" Show: "))
+        toolbar.addWidget(self.filter_box)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
         toolbar.addWidget(QLabel(f"{user.display_name} ({user.username})  "))
         toolbar.addAction("Log out", self.log_out)
 
-        self.table.selectionModel().selectionChanged.connect(self._update_actions)
+        self.table.selectionModel().selectionChanged.connect(self._selection_changed)
         self.refresh()
 
     # --- list ---
@@ -60,17 +83,67 @@ class MainWindow(QMainWindow):
             self._handle_error(exc)
             return
         self.model.set_files(files)
-        self._update_actions()
-        self.statusBar().showMessage(f"{len(files)} file(s) · {self.api.base_url}")
+        self._selection_changed()
 
     def selected_file(self) -> FileOut | None:
         rows = self.table.selectionModel().selectedRows()
         return self.model.file_at(rows[0].row()) if rows else None
 
-    def _update_actions(self) -> None:
-        has_selection = self.selected_file() is not None
-        self.download_action.setEnabled(has_selection)
-        self.delete_action.setEnabled(has_selection)
+    def _selection_changed(self) -> None:
+        file = self.selected_file()
+        self.download_action.setEnabled(file is not None)
+        self.delete_action.setEnabled(file is not None)
+        self._show_preview(file)
+        shown, total = self.model.rowCount(), self.model.total_count()
+        count = f"{total} file(s)" if shown == total else f"{shown} of {total} file(s) shown"
+        self.statusBar().showMessage(f"{count} · {self.api.base_url}")
+
+    # --- variant 57: sort by created date, .c/.jpg filter ---
+
+    def _header_clicked(self, section: int) -> None:
+        if section == CREATED_COLUMN:
+            reverse = SortOrder.ASC if self.model.sort_order is SortOrder.DESC else SortOrder.DESC
+            self.model.set_sort_order(reverse)
+            self._selection_changed()
+
+    def set_filter(self, file_filter: FileFilter) -> None:
+        self.model.set_filter(file_filter)
+        self._selection_changed()
+
+    # --- show/hide columns ---
+
+    def columns_menu(self) -> QMenu:
+        """Checkable list of columns; Name is always visible (greyed out)."""
+        menu = QMenu(self)
+        for column, (title, _) in enumerate(COLUMNS):
+            action = menu.addAction(title)
+            action.setCheckable(True)
+            action.setChecked(not self.table.isColumnHidden(column))
+            action.setEnabled(column != NAME_COLUMN)
+            action.toggled.connect(lambda checked, c=column: self.set_column_visible(c, checked))
+        return menu
+
+    def set_column_visible(self, column: int, visible: bool) -> None:
+        if column != NAME_COLUMN:
+            self.table.setColumnHidden(column, not visible)
+
+    # --- preview (.js as text, .png as image) ---
+
+    def _show_preview(self, file: FileOut | None) -> None:
+        if file is None:
+            self.preview.show_message("Select a file to preview it.\n(.js as text, .png as image)")
+        elif preview_kind(file.name) is None:
+            self.preview.show_content(file.name, b"")  # just the "no preview" message, no download
+        elif file.size > PREVIEW_MAX_BYTES:
+            self.preview.show_message(f"“{file.name}” is too large to preview.\nUse Download instead.")
+        else:
+            try:
+                with busy_cursor():
+                    data = self.api.download(file.id)
+            except ApiError as exc:
+                self.preview.show_message(f"Preview failed: {exc.detail}")
+                return
+            self.preview.show_content(file.name, data)
 
     # --- upload (button and drag-n-drop) ---
 
