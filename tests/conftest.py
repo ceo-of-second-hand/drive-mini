@@ -12,8 +12,15 @@ _tmp = Path(tempfile.mkdtemp(prefix="drivemini-tests-"))
 os.environ["DATABASE_URL"] = f"sqlite:///{(_tmp / 'test.db').as_posix()}"
 os.environ["STORAGE_DIR"] = str(_tmp / "storage")
 os.environ["JWT_SECRET"] = "test-secret-" + "x" * 32
+# Client settings (client.ini) and sync snapshots go to the temp folder too, never to the real
+# %APPDATA%\DriveMini of the person running the tests.
+os.environ["APPDATA"] = str(_tmp / "appdata")
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
+from PySide6.QtCore import QSettings  # noqa: E402
+
+QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(_tmp / "appdata"))
 from fastapi.testclient import TestClient  # noqa: E402
 
 from server.config import settings  # noqa: E402

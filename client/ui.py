@@ -13,6 +13,11 @@ def settings() -> QSettings:
     return QSettings(QSettings.Format.IniFormat, QSettings.Scope.UserScope, "DriveMini", "client")
 
 
+def short_path(path, label, width: int = 420) -> str:
+    """Long folder paths shortened in the middle ("C:\\Users\\…\\my-drive") to fit `width` pixels."""
+    return label.fontMetrics().elidedText(str(path), Qt.TextElideMode.ElideMiddle, width)
+
+
 @contextmanager
 def busy_cursor():
     """Wait cursor while a (short) server call runs."""

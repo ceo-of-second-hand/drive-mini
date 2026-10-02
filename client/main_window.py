@@ -10,7 +10,9 @@ from client.api import ApiError, RestApiClient, upload_problem
 from client.file_model import COLUMNS, CREATED_COLUMN, NAME_COLUMN, FileTableModel
 from client.preview import PREVIEW_MAX_BYTES, PreviewPanel, preview_kind
 from client.sorting import FileFilter, SortOrder
-from client.ui import busy_cursor
+from client.sync import FolderSync, account_id, unlink_folder
+from client.sync_dialog import SyncDialog
+from client.ui import busy_cursor, settings, short_path
 from common.rules import name_key
 from common.schemas import FileOut, UserOut
 
@@ -70,6 +72,25 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(QLabel(f"{user.display_name} ({user.username})  "))
         toolbar.addAction("Log out", self.log_out)
 
+        self.addToolBarBreak()  # second row: folder sync
+        sync_bar = QToolBar("Sync")
+        sync_bar.setMovable(False)
+        self.addToolBar(sync_bar)
+        # One synced folder per account (user + server), remembered between logins. Another
+        # account on this PC has its own, so two people's drives never mix in one folder.
+        self.folder_setting = f"sync_folder/{account_id(api.base_url, user.username)}"
+        self.sync_folder: Path | None = None
+        saved = settings().value(self.folder_setting, "")
+        if saved and Path(saved).is_dir():
+            self.sync_folder = Path(saved)
+        self.folder_label = QLabel()
+        # Buttons first: a long folder path must never push them out of sight.
+        sync_bar.addAction("Sync", self.sync_now)
+        sync_bar.addAction("Choose folder…", self.choose_sync_folder)
+        sync_bar.addWidget(QLabel("  Folder: "))
+        sync_bar.addWidget(self.folder_label)
+        self._show_folder()
+
         self.table.selectionModel().selectionChanged.connect(self._selection_changed)
         self.refresh()
 
@@ -109,6 +130,57 @@ class MainWindow(QMainWindow):
     def set_filter(self, file_filter: FileFilter) -> None:
         self.model.set_filter(file_filter)
         self._selection_changed()
+
+    # --- folder sync ---
+
+    def _show_folder(self) -> None:
+        if self.sync_folder is None:
+            self.folder_label.setText("none chosen")
+            self.folder_label.setToolTip("")
+            return
+        self.folder_label.setText(short_path(self.sync_folder, self.folder_label))
+        self.folder_label.setToolTip(str(self.sync_folder))
+
+    def choose_sync_folder(self) -> bool:
+        """Pick THE synced folder. Switching to another one asks first and unlinks the old one."""
+        chosen = QFileDialog.getExistingDirectory(self, "Choose the folder to sync",
+                                                  str(self.sync_folder or Path.home()))
+        if not chosen:
+            return False
+        new = Path(chosen)
+        saved = settings().value(self.folder_setting, "")
+        old = Path(saved) if saved else None
+        if old is not None and old.resolve() != new.resolve():
+            if old.is_dir():  # only warn if the old folder still exists
+                answer = QMessageBox.question(
+                    self, "Change synced folder",
+                    f"Your drive will now sync with:\n{new}\n\n"
+                    "Its files will be copied into this folder, and the previous folder\n"
+                    f"{old}\nwill no longer be synced (its files stay as they are).\n\nContinue?")
+                if answer != QMessageBox.StandardButton.Yes:
+                    return False
+            unlink_folder(self.api.base_url, self.user.username, old)
+        self.sync_folder = new
+        settings().setValue(self.folder_setting, str(new))
+        self._show_folder()
+        return True
+
+    def sync_now(self) -> None:
+        if self.sync_folder is None or not self.sync_folder.is_dir():
+            if not self.choose_sync_folder():
+                return
+        sync = FolderSync(self.api, self.sync_folder, self.user.username)
+        try:
+            with busy_cursor():
+                result = sync.run()
+        except ApiError as exc:  # e.g. the file list couldn't be fetched
+            self._handle_error(exc)
+            return
+        except OSError as exc:
+            QMessageBox.warning(self, "Sync", f"Could not read the folder:\n{exc}")
+            return
+        SyncDialog(sync, result, self).exec()
+        self.refresh()
 
     # --- show/hide columns ---
 
