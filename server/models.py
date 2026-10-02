@@ -33,7 +33,10 @@ class FileMetadata(Base):
     """One file on a user's virtual disk."""
     __tablename__ = "files"
     # One name per disk, ignoring case (name_key = casefolded name).
-    __table_args__ = (UniqueConstraint("owner_id", "name_key"),)
+    # sqlite_autoincrement: ids are never reused, even after the highest-id file is deleted,
+    # so an old id can't silently point at a different file, and a higher id = added later.
+    # (Applies when the table is created: an existing dev database must be deleted once.)
+    __table_args__ = (UniqueConstraint("owner_id", "name_key"), {"sqlite_autoincrement": True})
 
     id: Mapped[int] = mapped_column(primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)

@@ -79,6 +79,15 @@ def test_delete_removes_row_and_bytes(client, make_user):
     assert client.get(f"/files/{file_id}/content", headers=headers).status_code == 404
 
 
+def test_ids_of_deleted_files_are_never_reused(client, make_user):
+    headers = make_user("ivanka")
+    ids = [upload(client, headers, name).json()["id"] for name in ("a.js", "b.js", "c.js")]
+    client.delete(f"/files/{ids[-1]}", headers=headers)  # the highest id: SQLite's default would reuse it
+    new_id = upload(client, headers, "new.png").json()["id"]
+    assert new_id not in ids
+    assert new_id > max(ids)  # still "higher id = added later"
+
+
 def test_other_users_files_are_invisible_and_login_is_required(client, make_user):
     ivanka, bob = make_user("ivanka"), make_user("bob")
     file_id = upload(client, ivanka, "main.c").json()["id"]
