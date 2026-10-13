@@ -40,7 +40,7 @@ SAME_S, CHANGED_S = server_file(), server_file(modified=T + timedelta(seconds=1)
     (SAME_L, SAME_S, None, Kind.COMPARE),            # new on both sides: compare bytes
     (CHANGED_L, SAME_S, ENTRY, Kind.REPLACE),
     (SAME_L, CHANGED_S, ENTRY, Kind.DOWNLOAD),
-    (CHANGED_L, CHANGED_S, ENTRY, Kind.CONFLICT),
+    (CHANGED_L, CHANGED_S, ENTRY, Kind.COMPARE),     # changed on both sides: compare bytes
     (None, SAME_S, ENTRY, Kind.DELETE_SERVER),
     (SAME_L, None, ENTRY, Kind.DELETE_LOCAL),
     (CHANGED_L, None, ENTRY, Kind.CONFLICT),
@@ -155,6 +155,32 @@ def test_edits_on_both_sides_are_a_conflict_and_change_nothing(api, folder, outs
     assert [(c.name, c.reason) for c in result.conflicts] == [("a.js", "changed here, changed on the server")]
     assert (folder / "a.js").read_bytes() == b"mine" and server_content(api, "a.js") == b"theirs"
     assert [c.name for c in sync(api, folder).conflicts] == ["a.js"]  # still there until resolved
+
+
+def test_different_sizes_are_a_conflict_without_downloading(api, folder, outside, monkeypatch):
+    (folder / "a.js").write_bytes(b"v1")
+    sync(api, folder)
+    edit(folder / "a.js", b"mine")
+    api.replace(api.list_files()[0].id, outside("a.js", b"theirs, longer"))
+    monkeypatch.setattr(api, "download", lambda file_id: pytest.fail("downloaded although sizes differ"))
+    result = sync(api, folder)
+    assert [c.name for c in result.conflicts] == ["a.js"] and result.errors == []
+
+
+def test_one_edit_seen_by_two_clients_is_not_a_conflict(api, folder, tmp_path, monkeypatch):
+    """The same folder synced by two clients (e.g. desktop and browser), each with its own snapshot."""
+    (folder / "a.js").write_bytes(b"v1")
+    desktop = FolderSync(api, folder, "ivanka")
+    desktop.run()
+    monkeypatch.setenv("APPDATA", str(tmp_path / "other-client"))  # a second, separate snapshot
+    other = FolderSync(api, folder, "ivanka")
+    other.run()                                      # first sync there: identical, nothing to do
+
+    edit(folder / "a.js", b"v2")                     # one edit (same size as v1)...
+    assert desktop.run().uploaded == ["a.js (updated)"]  # ...uploaded by the desktop
+    result = other.run()                             # the other client: changed here AND on the server
+    assert result.conflicts == [] and result.nothing_happened  # same bytes: just remembered
+    assert other.run().nothing_happened
 
 
 def test_deletions_propagate_both_ways(api, folder):

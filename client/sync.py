@@ -189,8 +189,11 @@ def plan(local: dict[str, LocalFile], server: dict[str, FileOut],
             ("deleted", "same"): Kind.DELETE_SERVER,
             ("same", "deleted"): Kind.DELETE_LOCAL,
             ("deleted", "deleted"): Kind.FORGET,
-        }.get((here, there), Kind.CONFLICT)  # changed/changed, changed/deleted, deleted/changed
-        reason = f"{here} here, {there} on the server" if kind is Kind.CONFLICT else ""
+            # Changed on both sides: maybe one edit that already reached both (e.g. the same folder
+            # synced by another client). Identical bytes = no conflict.
+            ("changed", "changed"): Kind.COMPARE,
+        }.get((here, there), Kind.CONFLICT)  # changed/deleted, deleted/changed
+        reason = f"{here} here, {there} on the server" if kind in (Kind.CONFLICT, Kind.COMPARE) else ""
         actions.append(Action(kind, key, l, s, e, reason))
     return actions
 
@@ -251,11 +254,12 @@ class FolderSync:
             write_atomic(target, self.api.download(a.server.id))
             result.downloaded.append(a.server.name + (" (updated)" if a.local else ""))
             return make_entry(a.server, stat_local(target))
-        if a.kind is Kind.COMPARE:  # same name on both sides, never synced: same content?
-            if self.api.download(a.server.id) == a.local.path.read_bytes():
+        if a.kind is Kind.COMPARE:  # new or changed on both sides: same content?
+            # Different sizes = different content, so the download is skipped.
+            if a.local.size == a.server.size and self.api.download(a.server.id) == a.local.path.read_bytes():
                 return make_entry(a.server, a.local)
-            result.conflicts.append(Conflict(a.local.name, a.key, "different content on both sides"))
-            return None
+            result.conflicts.append(Conflict(a.local.name, a.key, a.reason or "different content on both sides"))
+            return a.entry  # unchanged until the user resolves it (None on a first sync)
         if a.kind is Kind.DELETE_SERVER:
             self.api.delete(a.server.id)
             result.deleted_on_server.append(a.server.name)
