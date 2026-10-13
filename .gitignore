@@ -4,6 +4,7 @@ plans/
 docs/
 CLAUDE.md
 .claude/
+session.txt
 
 # python
 .venv/
