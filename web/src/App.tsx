@@ -1,21 +1,34 @@
 import { useEffect, useState } from "react";
+import { ApiClient, type UserOut } from "./api";
+import LoginPage from "./LoginPage";
 
-type ServerStatus = "checking…" | "ok" | "not reachable";
-
-/** Placeholder page for the skeleton: proves the page, the dev proxy and the server work together. */
-export default function App() {
-  const [status, setStatus] = useState<ServerStatus>("checking…");
+/** Login page or the drive. A reload keeps you logged in (the token is in sessionStorage). */
+export default function App({ api = new ApiClient() }: { api?: ApiClient }) {
+  const [user, setUser] = useState<UserOut | null>(null);
+  const [restoring, setRestoring] = useState(api.loggedIn);
 
   useEffect(() => {
-    fetch("/health")
-      .then((response) => setStatus(response.ok ? "ok" : "not reachable"))
-      .catch(() => setStatus("not reachable"));
-  }, []);
+    api.onUnauthorized = () => setUser(null); // session expired: back to the login page
+    if (!api.loggedIn) return;
+    api.me()
+      .then(setUser)
+      .catch(() => api.logout())
+      .finally(() => setRestoring(false));
+  }, [api]);
 
+  function logOut() {
+    api.logout();
+    setUser(null);
+  }
+
+  if (restoring) return <p className="muted">Loading…</p>;
+  if (!user) return <LoginPage api={api} onLogin={setUser} />;
+  // The drive itself (the file table) comes in the next commit.
   return (
-    <main>
-      <h1>Drive Mini</h1>
-      <p>Server: {status}</p>
-    </main>
+    <header className="topbar">
+      <strong>Drive Mini</strong>
+      <span>{user.display_name} ({user.username})</span>
+      <button onClick={logOut}>Log out</button>
+    </header>
   );
 }

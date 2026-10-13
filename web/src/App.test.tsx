@@ -1,18 +1,34 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import App from "./App";
+import { ApiClient } from "./api";
 
-test("shows the server status from /health", async () => {
-  const fetchMock = vi.fn().mockResolvedValue(new Response('{"status": "ok"}'));
-  vi.stubGlobal("fetch", fetchMock);
-  render(<App />);
-  expect(screen.getByRole("heading")).toHaveTextContent("Drive Mini");
-  expect(await screen.findByText("Server: ok")).toBeInTheDocument();
-  expect(fetchMock).toHaveBeenCalledWith("/health");
+const USER = { id: 1, username: "ivanka", display_name: "Ivanka" };
+
+function reply(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+
+test("without a token the login page is shown", () => {
+  render(<App api={new ApiClient()} />);
+  expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
 });
 
-test("says so when the server is not running", async () => {
-  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
-  render(<App />);
-  expect(await screen.findByText("Server: not reachable")).toBeInTheDocument();
+test("a reload keeps you logged in, and Log out goes back to the login page", async () => {
+  sessionStorage.setItem("driveMini.token", "abc");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply(200, USER)));
+  render(<App api={new ApiClient()} />);
+
+  expect(await screen.findByText("Ivanka (ivanka)")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Log out" }));
+  expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
+  expect(sessionStorage.getItem("driveMini.token")).toBeNull();
+});
+
+test("an expired token on reload shows the login page", async () => {
+  sessionStorage.setItem("driveMini.token", "expired");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply(401, { detail: "Token expired." })));
+  render(<App api={new ApiClient()} />);
+  expect(await screen.findByRole("button", { name: "Log in" })).toBeInTheDocument();
 });

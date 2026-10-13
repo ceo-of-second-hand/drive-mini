@@ -34,6 +34,12 @@ npm run dev        # http://localhost:5173, API calls are forwarded to the serve
 npm test           # web tests
 ```
 
+After changing `common/schemas.py` or a route, regenerate the shared contract (the tests check it):
+```
+.venv\Scripts\python -m server.export_openapi       # writes common/openapi.json
+cd web && npm run gen:api                           # writes web/src/api-types.ts from it
+```
+
 ## Settings (`.env`)
 | Name           | Meaning                        | Default                  |
 |----------------|--------------------------------|--------------------------|
