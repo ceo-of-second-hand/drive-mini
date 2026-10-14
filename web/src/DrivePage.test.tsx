@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { ApiClient, type FileOut } from "./api";
@@ -179,6 +179,53 @@ test("when the filter hides everything, the table says why", async () => {
   await userEvent.selectOptions(screen.getByLabelText("Show:"), "Only .c and .jpg");
   expect(screen.getByText("No files match “Only .c and .jpg”.")).toBeInTheDocument();
   expect(screen.getByText("0 of 1 file(s) shown")).toBeInTheDocument();
+});
+
+// --- columns and preview ---
+
+const headerTitles = () => screen.getAllByRole("columnheader").map((h) => h.textContent);
+
+test("right-click on the header shows the column menu; Name can't be hidden", async () => {
+  fakeServer({ "/files": [file(1, "a.js")] });
+  renderDrive();
+  await screen.findByText("a.js");
+  fireEvent.contextMenu(screen.getAllByRole("columnheader")[0]);
+
+  const items = screen.getAllByRole("menuitemcheckbox");
+  expect(items.map((i) => i.textContent)).toEqual(["Name", "Created", "Modified", "Uploader", "Editor", "Size"]);
+  expect(within(items[0]).getByRole("checkbox")).toBeDisabled();
+  expect(within(items[3]).getByRole("checkbox")).toBeEnabled();
+});
+
+test("hiding Uploader and Editor removes them from the table, and it's remembered for this account", async () => {
+  fakeServer({ "/files": [file(1, "a.js")] });
+  renderDrive();
+  await screen.findByText("a.js");
+  fireEvent.contextMenu(screen.getAllByRole("columnheader")[0]);
+  await userEvent.click(screen.getByRole("checkbox", { name: "Uploader" }));
+  await userEvent.click(screen.getByRole("checkbox", { name: "Editor" }));
+
+  expect(headerTitles()).toEqual(["Name", "Created ▼", "Modified", "Size"]);
+  expect(within(screen.getByText("a.js").closest("tr")!).getAllByRole("cell")).toHaveLength(4);
+  await userEvent.keyboard("{Escape}");
+  expect(screen.queryByRole("menu")).toBeNull();
+
+  cleanup(); // log out and back in: still hidden
+  renderDrive();
+  await screen.findByText("a.js");
+  expect(headerTitles()).toEqual(["Name", "Created ▼", "Modified", "Size"]);
+
+  cleanup(); // another account in the same browser: its own choice (all visible)
+  render(<DrivePage api={new ApiClient()} user={{ ...USER, username: "bob" }} onLogout={() => {}} />);
+  await screen.findByText("a.js");
+  expect(headerTitles()).toHaveLength(6);
+});
+
+test("selecting a .js row previews it on the right", async () => {
+  fakeServer({ "/files": [file(1, "app.js")], "/files/1/content": new Response("let x = 1;") });
+  renderDrive();
+  await userEvent.click(await screen.findByText("app.js"));
+  expect(await within(screen.getByRole("complementary", { name: "Preview" })).findByText("let x = 1;")).toBeInTheDocument();
 });
 
 test("Log out is passed up to the app", async () => {

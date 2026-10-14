@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, type ApiClient, type FileOut, type UserOut } from "./api";
+import ColumnMenu, { loadHidden, NAME_COLUMN, saveHidden } from "./ColumnMenu";
 import { draggingFiles, droppedFiles } from "./dragDrop";
 import { deleteFile, downloadFile, uploadFiles } from "./fileActions";
 import { formatSize, formatTime } from "./format";
+import Preview from "./Preview";
 import { FILTERS, filterFiles, sortByCreated, type FileFilter, type SortOrder } from "./sorting";
 
 // The same columns as the desktop table (client/file_model.py). Name always stays visible.
@@ -30,6 +32,19 @@ export default function DrivePage({ api, user, onLogout }: { api: ApiClient; use
   const shown = files && sortByCreated(filterFiles(files, filter), sortOrder);
   // Looked up in what's shown, so a deleted or filtered-out file is never "selected".
   const selected = shown?.find((f) => f.id === selectedId) ?? null;
+  // Hidden columns, remembered per account in this browser. Name can't be hidden.
+  const [hidden, setHidden] = useState(() => loadHidden(user.username));
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const columns = COLUMNS.filter((c) => !hidden.has(c.title));
+  const closeMenu = useCallback(() => setMenuAt(null), []);
+
+  function toggleColumn(title: string) {
+    if (title === NAME_COLUMN) return;
+    const next = new Set(hidden);
+    if (!next.delete(title)) next.add(title);
+    setHidden(next);
+    saveHidden(user.username, next);
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -118,47 +133,53 @@ export default function DrivePage({ api, user, onLogout }: { api: ApiClient; use
                }} />
       </header>
 
-      <main className={dragOver ? "files drag-over" : "files"} data-testid="drop-zone"
-            onDragEnter={(e) => { if (draggingFiles(e.dataTransfer)) { e.preventDefault(); setDragOver(true); } }}
-            onDragLeave={(e) => {
-              // Leaving a row or cell inside the zone also fires dragleave: only react to really leaving it.
-              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragOver(false);
-              if (busy) return;
-              const { files: dropped, problems } = droppedFiles(e.dataTransfer);
-              if (dropped.length || problems.length) void upload(dropped, problems);
-            }}>
-        {dragOver && <div className="drop-hint">Drop files to upload them to your drive</div>}
-        {error && <p className="error" role="alert">{error}</p>}
-        <table>
-          <thead>
-            <tr>
-              {COLUMNS.map((c) => c.title === "Created" ? (
-                <th key={c.title} aria-sort={sortOrder === "asc" ? "ascending" : "descending"}>
-                  <button className="sort" title={`Sorted ${sortOrder === "asc" ? "oldest" : "newest"} first. Click to reverse.`}
-                          onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}>
-                    Created {sortOrder === "asc" ? "▲" : "▼"}
-                  </button>
-                </th>
-              ) : <th key={c.title} className={c.className}>{c.title}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {shown?.map((f) => (
-              <tr key={f.id} onClick={() => setSelectedId(f.id)} aria-selected={f.id === selectedId}>
-                {COLUMNS.map((c) => <td key={c.title} className={c.className}>{c.show(f)}</td>)}
+      <div className="body">
+        <main className={dragOver ? "files drag-over" : "files"} data-testid="drop-zone"
+              onDragEnter={(e) => { if (draggingFiles(e.dataTransfer)) { e.preventDefault(); setDragOver(true); } }}
+              onDragLeave={(e) => {
+                // Leaving a row or cell inside the zone also fires dragleave: only react to really leaving it.
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(false);
+                if (busy) return;
+                const { files: dropped, problems } = droppedFiles(e.dataTransfer);
+                if (dropped.length || problems.length) void upload(dropped, problems);
+              }}>
+          {dragOver && <div className="drop-hint">Drop files to upload them to your drive</div>}
+          {error && <p className="error" role="alert">{error}</p>}
+          <table>
+            <thead title="Right-click to show or hide columns"
+                   onContextMenu={(e) => { e.preventDefault(); setMenuAt({ x: e.clientX, y: e.clientY }); }}>
+              <tr>
+                {columns.map((c) => c.title === "Created" ? (
+                  <th key={c.title} aria-sort={sortOrder === "asc" ? "ascending" : "descending"}>
+                    <button className="sort" title={`Sorted ${sortOrder === "asc" ? "oldest" : "newest"} first. Click to reverse.`}
+                            onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}>
+                      Created {sortOrder === "asc" ? "▲" : "▼"}
+                    </button>
+                  </th>
+                ) : <th key={c.title} className={c.className}>{c.title}</th>)}
               </tr>
-            ))}
-          </tbody>
-        </table>
-        {files?.length === 0 && <p className="muted empty">Your drive is empty.</p>}
-        {!!files?.length && shown?.length === 0 && (
-          <p className="muted empty">No files match “{FILTERS[filter]}”.</p>
-        )}
-      </main>
+            </thead>
+            <tbody>
+              {shown?.map((f) => (
+                <tr key={f.id} onClick={() => setSelectedId(f.id)} aria-selected={f.id === selectedId}>
+                  {columns.map((c) => <td key={c.title} className={c.className}>{c.show(f)}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {files?.length === 0 && <p className="muted empty">Your drive is empty.</p>}
+          {!!files?.length && shown?.length === 0 && (
+            <p className="muted empty">No files match “{FILTERS[filter]}”.</p>
+          )}
+        </main>
+        <Preview api={api} file={selected} />
+      </div>
+      {menuAt && <ColumnMenu titles={COLUMNS.map((c) => c.title)} hidden={hidden} at={menuAt}
+                             onToggle={toggleColumn} onClose={closeMenu} />}
 
       <footer className="status">
         {files === null || shown === null ? "Loading…"
