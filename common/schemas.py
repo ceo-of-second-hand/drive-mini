@@ -4,6 +4,7 @@ The server uses these as request/response models; the client parses every reply 
 same classes, so a renamed or missing field fails immediately on both sides.
 """
 from datetime import datetime, timezone
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -69,3 +70,50 @@ class FileOut(BaseModel):
 class ErrorOut(BaseModel):
     """Error body, FastAPI's standard format: {"detail": "..."}."""
     detail: str
+
+
+# --- POST /sync/plan: the server runs the shared rules table (common/sync_rules.py) for the web
+# client, which can't run Python. The client lists its folder and keeps its own snapshot.
+
+class SyncLocalFile(BaseModel):
+    """One top-level file of the client's folder."""
+    name: str
+    mtime: int  # modified time in the client's own unit; only ever compared with itself
+    size: int
+
+
+class SyncEntry(BaseModel):
+    """One file in the client's snapshot: both sides as they were after its last sync."""
+    name: str
+    server_modified: datetime  # the file's modified_at as the server sent it
+    server_size: int
+    local_mtime: int
+    local_size: int
+
+    @field_validator("server_modified")
+    @classmethod
+    def as_utc(cls, value: datetime) -> datetime:
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+class SyncPlanIn(BaseModel):
+    local: list[SyncLocalFile]
+    snapshot: list[SyncEntry]
+
+
+SyncKind = Literal["upload", "download", "compare", "replace", "delete_server", "delete_local",
+                   "forget", "conflict", "nothing"]
+
+
+class SyncAction(BaseModel):
+    """What to do with one file (key = its name ignoring case)."""
+    kind: SyncKind
+    key: str
+    name: str
+    file: FileOut | None  # the server's file (with its current id), if it exists there
+    reason: str = ""  # for compare/conflict: what changed on each side
+
+
+class SyncPlanOut(BaseModel):
+    actions: list[SyncAction]
+    skipped: list[str]  # "name: reason" for local files the server would refuse (bad name, too big)

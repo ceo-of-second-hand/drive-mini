@@ -135,6 +135,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sync/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Plan
+         * @description What a sync should do, file by file. Nothing is changed here.
+         */
+        post: operations["sync_plan_sync_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -226,6 +246,72 @@ export interface components {
             password: string;
             /** Username */
             username: string;
+        };
+        /**
+         * SyncAction
+         * @description What to do with one file (key = its name ignoring case).
+         */
+        SyncAction: {
+            file: components["schemas"]["FileOut"] | null;
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "upload" | "download" | "compare" | "replace" | "delete_server" | "delete_local" | "forget" | "conflict" | "nothing";
+            /** Name */
+            name: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
+        /**
+         * SyncEntry
+         * @description One file in the client's snapshot: both sides as they were after its last sync.
+         */
+        SyncEntry: {
+            /** Local Mtime */
+            local_mtime: number;
+            /** Local Size */
+            local_size: number;
+            /** Name */
+            name: string;
+            /**
+             * Server Modified
+             * Format: date-time
+             */
+            server_modified: string;
+            /** Server Size */
+            server_size: number;
+        };
+        /**
+         * SyncLocalFile
+         * @description One top-level file of the client's folder.
+         */
+        SyncLocalFile: {
+            /** Mtime */
+            mtime: number;
+            /** Name */
+            name: string;
+            /** Size */
+            size: number;
+        };
+        /** SyncPlanIn */
+        SyncPlanIn: {
+            /** Local */
+            local: components["schemas"]["SyncLocalFile"][];
+            /** Snapshot */
+            snapshot: components["schemas"]["SyncEntry"][];
+        };
+        /** SyncPlanOut */
+        SyncPlanOut: {
+            /** Actions */
+            actions: components["schemas"]["SyncAction"][];
+            /** Skipped */
+            skipped: string[];
         };
         /** TokenOut */
         TokenOut: {
@@ -644,6 +730,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    sync_plan_sync_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncPlanIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncPlanOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

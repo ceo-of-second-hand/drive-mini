@@ -199,6 +199,164 @@
         "title": "RegisterIn",
         "type": "object"
       },
+      "SyncAction": {
+        "description": "What to do with one file (key = its name ignoring case).",
+        "properties": {
+          "file": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FileOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "upload",
+              "download",
+              "compare",
+              "replace",
+              "delete_server",
+              "delete_local",
+              "forget",
+              "conflict",
+              "nothing"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "key",
+          "name",
+          "file"
+        ],
+        "title": "SyncAction",
+        "type": "object"
+      },
+      "SyncEntry": {
+        "description": "One file in the client's snapshot: both sides as they were after its last sync.",
+        "properties": {
+          "local_mtime": {
+            "title": "Local Mtime",
+            "type": "integer"
+          },
+          "local_size": {
+            "title": "Local Size",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "server_modified": {
+            "format": "date-time",
+            "title": "Server Modified",
+            "type": "string"
+          },
+          "server_size": {
+            "title": "Server Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "server_modified",
+          "server_size",
+          "local_mtime",
+          "local_size"
+        ],
+        "title": "SyncEntry",
+        "type": "object"
+      },
+      "SyncLocalFile": {
+        "description": "One top-level file of the client's folder.",
+        "properties": {
+          "mtime": {
+            "title": "Mtime",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "mtime",
+          "size"
+        ],
+        "title": "SyncLocalFile",
+        "type": "object"
+      },
+      "SyncPlanIn": {
+        "properties": {
+          "local": {
+            "items": {
+              "$ref": "#/components/schemas/SyncLocalFile"
+            },
+            "title": "Local",
+            "type": "array"
+          },
+          "snapshot": {
+            "items": {
+              "$ref": "#/components/schemas/SyncEntry"
+            },
+            "title": "Snapshot",
+            "type": "array"
+          }
+        },
+        "required": [
+          "local",
+          "snapshot"
+        ],
+        "title": "SyncPlanIn",
+        "type": "object"
+      },
+      "SyncPlanOut": {
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/SyncAction"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skipped",
+            "type": "array"
+          }
+        },
+        "required": [
+          "actions",
+          "skipped"
+        ],
+        "title": "SyncPlanOut",
+        "type": "object"
+      },
       "TokenOut": {
         "properties": {
           "access_token": {
@@ -776,6 +934,63 @@
           }
         },
         "summary": "Health"
+      }
+    },
+    "/sync/plan": {
+      "post": {
+        "description": "What a sync should do, file by file. Nothing is changed here.",
+        "operationId": "sync_plan_sync_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncPlanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Sync Plan",
+        "tags": [
+          "sync"
+        ]
       }
     }
   }

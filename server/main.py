@@ -6,7 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from server.db import init_db
-from server.routers import auth, files
+from server.routers import auth, files, sync
 
 
 @asynccontextmanager
@@ -18,6 +18,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Drive Mini", lifespan=lifespan)
 app.include_router(auth.router)
 app.include_router(files.router)
+app.include_router(sync.router)
 
 
 @app.exception_handler(RequestValidationError)
