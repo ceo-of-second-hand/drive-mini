@@ -90,6 +90,30 @@ export class ApiClient {
   async listFiles(): Promise<FileOut[]> {
     return (await this.request("GET", "/files")).json();
   }
+
+  /** New file. A taken name fails with status 409 (then offer to replace). */
+  async upload(file: File): Promise<FileOut> {
+    return (await this.request("POST", "/files", formWith(file))).json();
+  }
+
+  /** New content for an existing file; its name, created time and uploader stay. */
+  async replace(fileId: number, file: File): Promise<FileOut> {
+    return (await this.request("PUT", `/files/${fileId}`, formWith(file))).json();
+  }
+
+  async download(fileId: number): Promise<Blob> {
+    return (await this.request("GET", `/files/${fileId}/content`)).blob();
+  }
+
+  async delete(fileId: number): Promise<void> {
+    await this.request("DELETE", `/files/${fileId}`);
+  }
+}
+
+function formWith(file: File): FormData {
+  const form = new FormData(); // the browser sets the multipart Content-Type itself
+  form.append("file", file);
+  return form;
 }
 
 /** The server's one-line message from {"detail": "..."}, or the HTTP status text. */

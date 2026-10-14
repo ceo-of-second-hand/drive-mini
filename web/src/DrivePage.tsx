@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, type ApiClient, type FileOut, type UserOut } from "./api";
+import { deleteFile, downloadFile, uploadFiles } from "./fileActions";
 import { formatSize, formatTime } from "./format";
 
 // The same columns as the desktop table (client/file_model.py). Name always stays visible.
@@ -12,10 +13,16 @@ const COLUMNS: { title: string; show: (f: FileOut) => string; className?: string
   { title: "Size", show: (f) => formatSize(f.size), className: "size" },
 ];
 
-/** The user's virtual disk: the top bar and the file table. */
+/** The user's virtual disk: the top bar with the file actions, the file table and a status line. */
 export default function DrivePage({ api, user, onLogout }: { api: ApiClient; user: UserOut; onLogout: () => void }) {
   const [files, setFiles] = useState<FileOut[] | null>(null); // null = not loaded yet
-  const [error, setError] = useState("");
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [error, setError] = useState(""); // shown above the table, in red
+  const [notice, setNotice] = useState(""); // shown in the status line, e.g. "Uploaded 2 file(s)."
+  const [busy, setBusy] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+  // Looked up in the current list, so a file that's gone (deleted) is never "selected".
+  const selected = files?.find((f) => f.id === selectedId) ?? null;
 
   const refresh = useCallback(async () => {
     try {
@@ -30,13 +37,55 @@ export default function DrivePage({ api, user, onLogout }: { api: ApiClient; use
     void refresh();
   }, [refresh]);
 
+  /** Run one action with the buttons disabled; its error (if any) is shown above the table. */
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await action();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const upload = (chosen: File[]) => run(async () => {
+    const { uploaded, problems } = await uploadFiles(api, chosen);
+    await refresh();
+    if (uploaded) setNotice(`Uploaded ${uploaded} file(s).`);
+    if (problems.length) setError(["Some files were not uploaded:", ...problems].join("\n"));
+  });
+
+  const download = (file: FileOut) => run(async () => {
+    await downloadFile(api, file);
+    setNotice(`Downloaded ${file.name}.`);
+  });
+
+  const remove = (file: FileOut) => run(async () => {
+    if (await deleteFile(api, file)) {
+      await refresh();
+      setNotice(`Deleted ${file.name}.`);
+    }
+  });
+
   return (
     <div className="drive">
       <header className="topbar">
         <strong>Drive Mini</strong>
-        <button onClick={() => void refresh()}>Refresh</button>
+        <button onClick={() => picker.current?.click()} disabled={busy}>Upload…</button>
+        <button onClick={() => selected && void download(selected)} disabled={busy || !selected}>Download</button>
+        <button onClick={() => selected && void remove(selected)} disabled={busy || !selected}>Delete</button>
+        <button onClick={() => void refresh()} disabled={busy}>Refresh</button>
         <span>{user.display_name} ({user.username})</span>
         <button onClick={onLogout}>Log out</button>
+        <input ref={picker} type="file" multiple hidden data-testid="file-picker"
+               onChange={(e) => {
+                 const chosen = Array.from(e.target.files ?? []);
+                 e.target.value = ""; // so choosing the same file again still triggers onChange
+                 if (chosen.length) void upload(chosen);
+               }} />
       </header>
 
       <main className="files">
@@ -47,7 +96,7 @@ export default function DrivePage({ api, user, onLogout }: { api: ApiClient; use
           </thead>
           <tbody>
             {files?.map((f) => (
-              <tr key={f.id}>
+              <tr key={f.id} onClick={() => setSelectedId(f.id)} aria-selected={f.id === selectedId}>
                 {COLUMNS.map((c) => <td key={c.title} className={c.className}>{c.show(f)}</td>)}
               </tr>
             ))}
@@ -56,7 +105,10 @@ export default function DrivePage({ api, user, onLogout }: { api: ApiClient; use
         {files?.length === 0 && <p className="muted empty">Your drive is empty.</p>}
       </main>
 
-      <footer className="status">{files === null ? "Loading…" : `${files.length} file(s)`}</footer>
+      <footer className="status">
+        {files === null ? "Loading…" : `${files.length} file(s)`}
+        {notice && ` · ${notice}`}
+      </footer>
     </div>
   );
 }

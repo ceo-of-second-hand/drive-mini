@@ -57,6 +57,73 @@ test("a server error is shown instead of the list", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent("Database is locked.");
 });
 
+test("Download and Delete need a selected row", async () => {
+  fakeServer({ "/files": [file(1, "a.js")] });
+  renderDrive();
+  await userEvent.click(await screen.findByText("a.js"));
+  expect(screen.getByRole("button", { name: "Download" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Delete" })).toBeEnabled();
+  expect(screen.getByText("a.js").closest("tr")).toHaveAttribute("aria-selected", "true");
+});
+
+test("nothing selected: Download and Delete are disabled", async () => {
+  fakeServer({ "/files": [file(1, "a.js")] });
+  renderDrive();
+  await screen.findByText("a.js");
+  expect(screen.getByRole("button", { name: "Download" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
+});
+
+test("Upload sends the chosen files, refreshes the list and says how many", async () => {
+  const fetchMock = fakeServer({ "GET /files": inOrder([], [file(1, "notes.txt")]), "POST /files": file(1, "notes.txt") });
+  renderDrive();
+  await screen.findByText("Your drive is empty.");
+
+  await userEvent.upload(screen.getByTestId("file-picker"), new File(["hello"], "notes.txt"));
+  expect(await screen.findByText("notes.txt")).toBeInTheDocument();
+  expect(screen.getByText("1 file(s) · Uploaded 1 file(s).")).toBeInTheDocument();
+  const [, init] = fetchMock.mock.calls.find(([, i]) => i?.method === "POST")!;
+  expect((init!.body as FormData).get("file")).toHaveProperty("name", "notes.txt");
+});
+
+test("a failed upload is listed above the table", async () => {
+  fakeServer({ "GET /files": [], "POST /files": reply(422, { detail: "'CON' is a reserved name on Windows." }) });
+  renderDrive();
+  await screen.findByText("Your drive is empty.");
+  await userEvent.upload(screen.getByTestId("file-picker"), new File(["x"], "CON"));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Some files were not uploaded: CON: 'CON' is a reserved name on Windows.");
+});
+
+test("Download hands the file to the browser under its real name", async () => {
+  fakeServer({ "/files": [file(3, "app.js")], "/files/3/content": new Response("console.log(1)") });
+  vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn(() => "blob:x"), revokeObjectURL: vi.fn() }));
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  renderDrive();
+
+  await userEvent.click(await screen.findByText("app.js"));
+  await userEvent.click(screen.getByRole("button", { name: "Download" }));
+  expect(await screen.findByText("1 file(s) · Downloaded app.js.")).toBeInTheDocument();
+  const link = click.mock.contexts[0] as HTMLAnchorElement;
+  expect(link.download).toBe("app.js");
+  expect(link.href).toBe("blob:x");
+  click.mockRestore();
+});
+
+test("Delete asks, removes the file and refreshes", async () => {
+  const fetchMock = fakeServer({ "GET /files": inOrder([file(3, "old.c")], []), "DELETE /files/3": new Response(null, { status: 204 }) });
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  renderDrive();
+
+  await userEvent.click(await screen.findByText("old.c"));
+  await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+  expect(await screen.findByText("Your drive is empty.")).toBeInTheDocument();
+  expect(confirm).toHaveBeenCalledWith("Delete “old.c” from your drive?\nThis can't be undone.");
+  expect(fetchMock.mock.calls.some(([url, init]) => url === "/files/3" && init?.method === "DELETE")).toBe(true);
+  expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled(); // the deleted file isn't selected anymore
+  confirm.mockRestore();
+});
+
 test("Log out is passed up to the app", async () => {
   fakeServer({ "/files": [] });
   const onLogout = renderDrive();

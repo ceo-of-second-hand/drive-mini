@@ -136,8 +136,22 @@ input {
   font-weight: 600;
 }
 
+.files tbody tr {
+  cursor: default;
+  user-select: none;
+}
+
 .files tbody tr:hover {
   background: #eef4ff;
+}
+
+.files tbody tr[aria-selected="true"] {
+  background: #d6e4ff;
+}
+
+.files .error {
+  white-space: pre-line; /* the upload summary is one problem per line */
+  margin-bottom: 10px;
 }
 
 .files .size {
