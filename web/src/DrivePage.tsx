@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, type ApiClient, type FileOut, type UserOut } from "./api";
+import { draggingFiles, droppedFiles } from "./dragDrop";
 import { deleteFile, downloadFile, uploadFiles } from "./fileActions";
 import { formatSize, formatTime } from "./format";
 
@@ -20,6 +21,7 @@ export default function DrivePage({ api, user, onLogout }: { api: ApiClient; use
   const [error, setError] = useState(""); // shown above the table, in red
   const [notice, setNotice] = useState(""); // shown in the status line, e.g. "Uploaded 2 file(s)."
   const [busy, setBusy] = useState(false);
+  const [dragOver, setDragOver] = useState(false); // files are being dragged over the table
   const picker = useRef<HTMLInputElement>(null);
   // Looked up in the current list, so a file that's gone (deleted) is never "selected".
   const selected = files?.find((f) => f.id === selectedId) ?? null;
@@ -37,6 +39,22 @@ export default function DrivePage({ api, user, onLogout }: { api: ApiClient; use
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    // dragover is asked again on every mouse move. Accepting it for the whole page (it bubbles up
+    // here from the table too) is what allows the drop at all; without it the browser shows "not
+    // allowed" (the Stage 2 bug). The drop handler stops a file dropped next to the table from
+    // being opened in the tab, which would leave the app.
+    const keep = (e: DragEvent) => {
+      if (draggingFiles(e.dataTransfer)) e.preventDefault();
+    };
+    window.addEventListener("dragover", keep);
+    window.addEventListener("drop", keep);
+    return () => {
+      window.removeEventListener("dragover", keep);
+      window.removeEventListener("drop", keep);
+    };
+  }, []);
+
   /** Run one action with the buttons disabled; its error (if any) is shown above the table. */
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -51,8 +69,9 @@ export default function DrivePage({ api, user, onLogout }: { api: ApiClient; use
     }
   }
 
-  const upload = (chosen: File[]) => run(async () => {
+  const upload = (chosen: File[], skipped: string[] = []) => run(async () => {
     const { uploaded, problems } = await uploadFiles(api, chosen);
+    problems.unshift(...skipped);
     await refresh();
     if (uploaded) setNotice(`Uploaded ${uploaded} file(s).`);
     if (problems.length) setError(["Some files were not uploaded:", ...problems].join("\n"));
@@ -88,7 +107,20 @@ export default function DrivePage({ api, user, onLogout }: { api: ApiClient; use
                }} />
       </header>
 
-      <main className="files">
+      <main className={dragOver ? "files drag-over" : "files"} data-testid="drop-zone"
+            onDragEnter={(e) => { if (draggingFiles(e.dataTransfer)) { e.preventDefault(); setDragOver(true); } }}
+            onDragLeave={(e) => {
+              // Leaving a row or cell inside the zone also fires dragleave: only react to really leaving it.
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              if (busy) return;
+              const { files: dropped, problems } = droppedFiles(e.dataTransfer);
+              if (dropped.length || problems.length) void upload(dropped, problems);
+            }}>
+        {dragOver && <div className="drop-hint">Drop files to upload them to your drive</div>}
         {error && <p className="error" role="alert">{error}</p>}
         <table>
           <thead>

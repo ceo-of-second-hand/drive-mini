@@ -169,3 +169,26 @@ input {
   color: var(--muted);
   font-size: 12px;
 }
+
+/* Drag-and-drop: the table area is the drop zone */
+.files {
+  position: relative;
+}
+
+.files.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+  background: #eef4ff;
+}
+
+.drop-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: var(--accent);
+  background: rgba(238, 244, 255, 0.85);
+  pointer-events: none; /* so the drop still lands on the zone underneath */
+}
