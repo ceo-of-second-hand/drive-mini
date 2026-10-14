@@ -15,13 +15,13 @@ import json
 import os
 import uuid
 from dataclasses import asdict, dataclass, field
-from enum import Enum
 from pathlib import Path
 from urllib.parse import urlparse
 
 from client.api import ApiError, RestApiClient
 from common.rules import MAX_UPLOAD_BYTES, name_key, validate_file_name
 from common.schemas import FileOut
+from common.sync_rules import Action, Entry, Kind, plan  # the rules table, shared with the server
 
 IGNORED_NAMES = {"desktop.ini", "thumbs.db"}  # created by Windows itself in folders
 TEMP_PREFIX = ".drivemini-"  # our own temporary files while downloading
@@ -35,38 +35,6 @@ class LocalFile:
     path: Path
     mtime_ns: int
     size: int
-
-
-@dataclass
-class Entry:
-    """One file in the snapshot: both sides as they were after the last sync."""
-    name: str
-    server_modified: str  # ISO time from the server (compared only with server times)
-    server_size: int
-    local_mtime_ns: int  # from this PC's file system (compared only with this PC's times)
-    local_size: int
-
-
-class Kind(Enum):
-    UPLOAD = "upload"
-    DOWNLOAD = "download"
-    COMPARE = "compare bytes"
-    REPLACE = "replace on server"
-    DELETE_SERVER = "delete on server"
-    DELETE_LOCAL = "delete locally"
-    FORGET = "forget"
-    CONFLICT = "conflict"
-    NOTHING = "nothing"
-
-
-@dataclass
-class Action:
-    kind: Kind
-    key: str
-    local: LocalFile | None
-    server: FileOut | None
-    entry: Entry | None
-    reason: str = ""  # for conflicts: what happened on each side
 
 
 @dataclass
@@ -164,38 +132,6 @@ def write_atomic(path: Path, data: bytes) -> None:
     tmp = path.with_name(f"{TEMP_PREFIX}{uuid.uuid4().hex}.tmp")
     tmp.write_bytes(data)
     os.replace(tmp, path)
-
-
-# --- deciding ---
-
-def plan(local: dict[str, LocalFile], server: dict[str, FileOut],
-         snapshot: dict[str, Entry]) -> list[Action]:
-    """One action per file name: the rules table, nothing else (no I/O)."""
-    actions = []
-    for key in sorted(set(local) | set(server) | set(snapshot)):
-        l, s, e = local.get(key), server.get(key), snapshot.get(key)
-        if e is None:  # not seen at the last sync (or first sync)
-            kind = Kind.COMPARE if (l and s) else Kind.UPLOAD if l else Kind.DOWNLOAD
-            actions.append(Action(kind, key, l, s, e))
-            continue
-        here = "deleted" if l is None else \
-            "same" if (l.mtime_ns, l.size) == (e.local_mtime_ns, e.local_size) else "changed"
-        there = "deleted" if s is None else \
-            "same" if (s.modified_at.isoformat(), s.size) == (e.server_modified, e.server_size) else "changed"
-        kind = {
-            ("same", "same"): Kind.NOTHING,
-            ("changed", "same"): Kind.REPLACE,
-            ("same", "changed"): Kind.DOWNLOAD,
-            ("deleted", "same"): Kind.DELETE_SERVER,
-            ("same", "deleted"): Kind.DELETE_LOCAL,
-            ("deleted", "deleted"): Kind.FORGET,
-            # Changed on both sides: maybe one edit that already reached both (e.g. the same folder
-            # synced by another client). Identical bytes = no conflict.
-            ("changed", "changed"): Kind.COMPARE,
-        }.get((here, there), Kind.CONFLICT)  # changed/deleted, deleted/changed
-        reason = f"{here} here, {there} on the server" if kind in (Kind.CONFLICT, Kind.COMPARE) else ""
-        actions.append(Action(kind, key, l, s, e, reason))
-    return actions
 
 
 # --- doing ---
