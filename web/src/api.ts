@@ -84,6 +84,12 @@ export class ApiClient {
   async me(): Promise<UserOut> {
     return (await this.request("GET", "/auth/me")).json();
   }
+
+  // --- files ---
+
+  async listFiles(): Promise<FileOut[]> {
+    return (await this.request("GET", "/files")).json();
+  }
 }
 
 /** The server's one-line message from {"detail": "..."}, or the HTTP status text. */

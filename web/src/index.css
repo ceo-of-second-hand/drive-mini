@@ -102,3 +102,56 @@ input {
   margin-left: auto;
   color: var(--muted);
 }
+
+/* Drive page: top bar, the file table filling the window, a status line at the bottom */
+.drive {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.files {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 16px;
+}
+
+.files table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.files th,
+.files td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.files th {
+  background: var(--page);
+  font-weight: 600;
+}
+
+.files tbody tr:hover {
+  background: #eef4ff;
+}
+
+.files .size {
+  text-align: right;
+}
+
+.files .empty {
+  margin: 16px 4px;
+}
+
+.status {
+  padding: 4px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+}
