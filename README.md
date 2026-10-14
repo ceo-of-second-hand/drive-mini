@@ -32,6 +32,7 @@ Web client (with the server running, in a second terminal):
 cd web
 npm run dev        # http://localhost:5173, API calls are forwarded to the server on :8000
 npm test           # web tests
+npm run e2e        # end-to-end test in Edge: its own temporary server and database (ports 8765, 5199)
 ```
 
 After changing `common/schemas.py` or a route, regenerate the shared contract (the tests check it):
