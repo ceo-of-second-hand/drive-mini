@@ -26,7 +26,7 @@ test("the table shows every attribute of each file", async () => {
 
   const row = (await screen.findByText("app.js")).closest("tr")!;
   const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
-  expect(headers).toEqual(["Name", "Created", "Modified", "Uploader", "Editor", "Size"]);
+  expect(headers).toEqual(["Name", "Created ▼", "Modified", "Uploader", "Editor", "Size"]);
   const cells = within(row).getAllByRole("cell").map((c) => c.textContent);
   expect(cells).toEqual(["app.js", formatTime("2026-10-02T09:00:00Z"), formatTime("2026-10-03T10:30:15Z"),
                          "Ivanka", "Bob", "2.0 KB"]);
@@ -122,6 +122,63 @@ test("Delete asks, removes the file and refreshes", async () => {
   expect(fetchMock.mock.calls.some(([url, init]) => url === "/files/3" && init?.method === "DELETE")).toBe(true);
   expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled(); // the deleted file isn't selected anymore
   confirm.mockRestore();
+});
+
+// --- variant 57 in the table ---
+
+const MIXED = [ // ids, names and creation times in different orders
+  file(1, "b-middle.js", { created_at: "2026-10-01T11:00:00Z" }),
+  file(2, "c-newest.png", { created_at: "2026-10-01T14:00:00Z" }),
+  file(3, "a-oldest.c", { created_at: "2026-10-01T09:00:00Z" }),
+  file(4, "d-second.jpg", { created_at: "2026-10-01T10:00:00Z" }),
+];
+const rowNames = () => screen.getAllByRole("row").slice(1).map((r) => within(r).getAllByRole("cell")[0].textContent);
+
+test("newest first by default; clicking Created reverses the order", async () => {
+  fakeServer({ "/files": MIXED });
+  renderDrive();
+  await screen.findByText("a-oldest.c");
+  expect(rowNames()).toEqual(["c-newest.png", "b-middle.js", "d-second.jpg", "a-oldest.c"]);
+
+  await userEvent.click(screen.getByRole("button", { name: "Created ▼" }));
+  expect(rowNames()).toEqual(["a-oldest.c", "d-second.jpg", "b-middle.js", "c-newest.png"]);
+  expect(screen.getByRole("button", { name: "Created ▲" })).toHaveAttribute("title", "Sorted oldest first. Click to reverse.");
+
+  await userEvent.click(screen.getByRole("button", { name: "Created ▲" }));
+  expect(rowNames()).toEqual(["c-newest.png", "b-middle.js", "d-second.jpg", "a-oldest.c"]);
+});
+
+test("Show: Only .c and .jpg hides the rest and the status line says so", async () => {
+  fakeServer({ "/files": MIXED });
+  renderDrive();
+  await screen.findByText("a-oldest.c");
+
+  await userEvent.selectOptions(screen.getByLabelText("Show:"), "Only .c and .jpg");
+  expect(rowNames()).toEqual(["d-second.jpg", "a-oldest.c"]); // still newest first
+  expect(screen.getByText("2 of 4 file(s) shown")).toBeInTheDocument();
+
+  await userEvent.selectOptions(screen.getByLabelText("Show:"), "All files");
+  expect(rowNames()).toHaveLength(4);
+  expect(screen.getByText("4 file(s)")).toBeInTheDocument();
+});
+
+test("a selected file that the filter hides can't be downloaded or deleted", async () => {
+  fakeServer({ "/files": MIXED });
+  renderDrive();
+  await userEvent.click(await screen.findByText("b-middle.js"));
+  expect(screen.getByRole("button", { name: "Delete" })).toBeEnabled();
+
+  await userEvent.selectOptions(screen.getByLabelText("Show:"), "Only .c and .jpg");
+  expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
+});
+
+test("when the filter hides everything, the table says why", async () => {
+  fakeServer({ "/files": [file(1, "app.js")] });
+  renderDrive();
+  await screen.findByText("app.js");
+  await userEvent.selectOptions(screen.getByLabelText("Show:"), "Only .c and .jpg");
+  expect(screen.getByText("No files match “Only .c and .jpg”.")).toBeInTheDocument();
+  expect(screen.getByText("0 of 1 file(s) shown")).toBeInTheDocument();
 });
 
 test("Log out is passed up to the app", async () => {

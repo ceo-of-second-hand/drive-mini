@@ -192,3 +192,24 @@ input {
   background: rgba(238, 244, 255, 0.85);
   pointer-events: none; /* so the drop still lands on the zone underneath */
 }
+
+/* Variant 57: the "Created" header sorts, the "Show:" box filters */
+.files th button.sort {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.topbar .show {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.topbar select {
+  font: inherit;
+  padding: 4px 6px;
+}

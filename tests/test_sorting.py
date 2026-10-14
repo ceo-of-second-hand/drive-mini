@@ -2,8 +2,10 @@
 
 These are the exact functions the file table uses.
 """
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from client.sorting import FileFilter, SortOrder, filter_files, sort_by_created
 
@@ -69,3 +71,26 @@ def test_filter_only_c_and_jpg_ignores_case_and_lookalikes():
 def test_filter_then_sort_together():
     assert names(sort_by_created(filter_files(FILES, FileFilter.C_JPG), SortOrder.DESC)) == \
         ["d-second.jpg", "a-oldest.c"]
+
+
+# --- the shared cases: the web client's TypeScript copy is checked against the same file -------
+
+CASES = json.loads((Path(__file__).resolve().parent.parent / "common" / "variant_cases.json")
+                   .read_text(encoding="utf-8"))
+
+
+def as_files(items):
+    return [F(i["id"], i["name"], datetime.fromisoformat(i["created_at"])) for i in items]
+
+
+def test_shared_variant_cases():
+    files = as_files(CASES["files"])
+    assert names(sort_by_created(files, SortOrder.ASC)) == CASES["oldest_first"]
+    assert names(sort_by_created(files, SortOrder.DESC)) == CASES["newest_first"]
+    ties = CASES["equal_times"]
+    assert [f.id for f in sort_by_created(as_files(ties["files"]), SortOrder.ASC)] == ties["oldest_first_ids"]
+    assert [f.id for f in sort_by_created(as_files(ties["files"]), SortOrder.DESC)] == ties["newest_first_ids"]
+    named = [F(i, n, T0) for i, n in enumerate(CASES["filter_c_jpg"]["names"])]
+    assert names(filter_files(named, FileFilter.C_JPG)) == CASES["filter_c_jpg"]["kept"]
+    assert names(sort_by_created(filter_files(files, FileFilter.C_JPG), SortOrder.DESC)) == \
+        CASES["filter_then_newest_first"]

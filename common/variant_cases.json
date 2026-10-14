@@ -1,0 +1,26 @@
+{
+  "about": "Variant 57 test cases, read by BOTH tests/test_sorting.py (Python, desktop) and web/src/sorting.test.ts (TypeScript, web), so the two copies of the sort and filter can't drift apart. Ids, names and creation times are in different orders on purpose: only a real sort by creation time passes.",
+  "files": [
+    {"id": 1, "name": "b-middle.js", "created_at": "2026-10-01T11:00:00Z"},
+    {"id": 2, "name": "c-newest.png", "created_at": "2026-10-01T14:00:00Z"},
+    {"id": 3, "name": "a-oldest.c", "created_at": "2026-10-01T09:00:00Z"},
+    {"id": 4, "name": "d-second.jpg", "created_at": "2026-10-01T10:00:00Z"}
+  ],
+  "oldest_first": ["a-oldest.c", "d-second.jpg", "b-middle.js", "c-newest.png"],
+  "newest_first": ["c-newest.png", "b-middle.js", "d-second.jpg", "a-oldest.c"],
+  "equal_times": {
+    "files": [
+      {"id": 7, "name": "x.js", "created_at": "2026-10-01T09:00:00Z"},
+      {"id": 5, "name": "y.js", "created_at": "2026-10-01T09:00:00Z"},
+      {"id": 6, "name": "z.js", "created_at": "2026-10-01T09:00:00Z"}
+    ],
+    "oldest_first_ids": [5, 6, 7],
+    "newest_first_ids": [7, 6, 5]
+  },
+  "filter_c_jpg": {
+    "names": ["main.c", "MAIN.C", "photo.jpg", "Photo.JPG", "app.js", "logo.png", "photo.jpeg", "main.cpp",
+              "notes.c.txt", "c", "jpg", "archive.jpg.zip", ".c"],
+    "kept": ["main.c", "MAIN.C", "photo.jpg", "Photo.JPG"]
+  },
+  "filter_then_newest_first": ["d-second.jpg", "a-oldest.c"]
+}

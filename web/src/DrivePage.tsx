@@ -3,6 +3,7 @@ import { ApiError, type ApiClient, type FileOut, type UserOut } from "./api";
 import { draggingFiles, droppedFiles } from "./dragDrop";
 import { deleteFile, downloadFile, uploadFiles } from "./fileActions";
 import { formatSize, formatTime } from "./format";
+import { FILTERS, filterFiles, sortByCreated, type FileFilter, type SortOrder } from "./sorting";
 
 // The same columns as the desktop table (client/file_model.py). Name always stays visible.
 const COLUMNS: { title: string; show: (f: FileOut) => string; className?: string }[] = [
@@ -23,8 +24,12 @@ export default function DrivePage({ api, user, onLogout }: { api: ApiClient; use
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false); // files are being dragged over the table
   const picker = useRef<HTMLInputElement>(null);
-  // Looked up in the current list, so a file that's gone (deleted) is never "selected".
-  const selected = files?.find((f) => f.id === selectedId) ?? null;
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc"); // newest first, as on desktop
+  const [filter, setFilter] = useState<FileFilter>("all");
+  // What the table shows: variant 57's filter, then its sort by creation date.
+  const shown = files && sortByCreated(filterFiles(files, filter), sortOrder);
+  // Looked up in what's shown, so a deleted or filtered-out file is never "selected".
+  const selected = shown?.find((f) => f.id === selectedId) ?? null;
 
   const refresh = useCallback(async () => {
     try {
@@ -97,6 +102,12 @@ export default function DrivePage({ api, user, onLogout }: { api: ApiClient; use
         <button onClick={() => selected && void download(selected)} disabled={busy || !selected}>Download</button>
         <button onClick={() => selected && void remove(selected)} disabled={busy || !selected}>Delete</button>
         <button onClick={() => void refresh()} disabled={busy}>Refresh</button>
+        <label className="show">
+          Show:
+          <select value={filter} onChange={(e) => setFilter(e.target.value as FileFilter)}>
+            {Object.entries(FILTERS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
         <span>{user.display_name} ({user.username})</span>
         <button onClick={onLogout}>Log out</button>
         <input ref={picker} type="file" multiple hidden data-testid="file-picker"
@@ -124,10 +135,19 @@ export default function DrivePage({ api, user, onLogout }: { api: ApiClient; use
         {error && <p className="error" role="alert">{error}</p>}
         <table>
           <thead>
-            <tr>{COLUMNS.map((c) => <th key={c.title} className={c.className}>{c.title}</th>)}</tr>
+            <tr>
+              {COLUMNS.map((c) => c.title === "Created" ? (
+                <th key={c.title} aria-sort={sortOrder === "asc" ? "ascending" : "descending"}>
+                  <button className="sort" title={`Sorted ${sortOrder === "asc" ? "oldest" : "newest"} first. Click to reverse.`}
+                          onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}>
+                    Created {sortOrder === "asc" ? "▲" : "▼"}
+                  </button>
+                </th>
+              ) : <th key={c.title} className={c.className}>{c.title}</th>)}
+            </tr>
           </thead>
           <tbody>
-            {files?.map((f) => (
+            {shown?.map((f) => (
               <tr key={f.id} onClick={() => setSelectedId(f.id)} aria-selected={f.id === selectedId}>
                 {COLUMNS.map((c) => <td key={c.title} className={c.className}>{c.show(f)}</td>)}
               </tr>
@@ -135,10 +155,14 @@ export default function DrivePage({ api, user, onLogout }: { api: ApiClient; use
           </tbody>
         </table>
         {files?.length === 0 && <p className="muted empty">Your drive is empty.</p>}
+        {!!files?.length && shown?.length === 0 && (
+          <p className="muted empty">No files match “{FILTERS[filter]}”.</p>
+        )}
       </main>
 
       <footer className="status">
-        {files === null ? "Loading…" : `${files.length} file(s)`}
+        {files === null || shown === null ? "Loading…"
+          : shown.length === files.length ? `${files.length} file(s)` : `${shown.length} of ${files.length} file(s) shown`}
         {notice && ` · ${notice}`}
       </footer>
     </div>
